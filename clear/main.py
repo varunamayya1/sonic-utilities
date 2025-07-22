@@ -15,6 +15,7 @@ from . import orchagent as orchagent_clear
 from . import plugins
 from . import stp
 from . import icmp as icmp_clear
+from . import portchannel
 
 # This is from the aliases example:
 # https://github.com/pallets/click/blob/57c6f09611fc47ca80db0bd010f05998b3c0aa95/examples/aliases/aliases.py
@@ -193,6 +194,10 @@ def llr_counters_interface(interface_name, namespace):
 # 'orchagent'
 #
 cli.add_command(orchagent_clear.orchagent)
+
+# 'portchannel'
+#
+cli.add_command(portchannel.portchannel)
 
 #
 # Inserting BGP functionality into cli's clear parse-chain.
