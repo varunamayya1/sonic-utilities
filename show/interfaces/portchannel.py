@@ -155,12 +155,71 @@ class Teamshow(object):
             output.append([team_id, 'PortChannel'+team_id, self.summary[team_id]['protocol'], self.summary[team_id]['ports']])
         print(tabulate(output, header))
 
-# 'portchannel' subcommand ("show interfaces portchannel")
-@click.command()
+PORT_CHANNEL_FALLBACK_CFG_FIELD = "fallback"
+PORT_CHANNEL_FALLBACK_TIMEOUT_CFG_FIELD = "fallback_timeout"
+PORT_CHANNEL_FALLBACK_STATE_FIELD = "runner.fallback"
+PORT_CHANNEL_FALLBACK_TIMEOUT_STATE_FIELD = "runner.fallback_timeout"
+
+DEFAULT_FALLBACK_TIMEOUT = "90"
+
+
+class TeamFallbackShow(object):
+    def __init__(self, namespace_option, display_option):
+        self.rows = []
+        self.db = None
+        self.multi_asic = multi_asic_util.MultiAsic(display_option, namespace_option)
+
+    @multi_asic_util.run_on_multi_asic
+    def get_fallback_info(self):
+        team_keys = self.db.keys(self.db.CONFIG_DB, PORT_CHANNEL_CFG_TABLE_PREFIX + "*")
+        if team_keys is None:
+            return
+
+        for key in team_keys:
+            team_name = key[len(PORT_CHANNEL_CFG_TABLE_PREFIX):]
+            if self.multi_asic.skip_display(PORT_CHANNEL_OBJ, team_name) is True:
+                continue
+
+            cfg = self.db.get_all(self.db.CONFIG_DB, key) or {}
+            state = self.db.get_all(
+                self.db.STATE_DB, PORT_CHANNEL_STATE_TABLE_PREFIX + team_name) or {}
+
+            cfg_fallback = cfg.get(PORT_CHANNEL_FALLBACK_CFG_FIELD, "false")
+            if cfg_fallback.lower() == "true":
+                cfg_timeout = cfg.get(PORT_CHANNEL_FALLBACK_TIMEOUT_CFG_FIELD,
+                                      DEFAULT_FALLBACK_TIMEOUT)
+            else:
+                cfg_timeout = "N/A"
+
+            oper_fallback = state.get(PORT_CHANNEL_FALLBACK_STATE_FIELD, "N/A")
+            oper_timeout = state.get(PORT_CHANNEL_FALLBACK_TIMEOUT_STATE_FIELD, "N/A")
+
+            self.rows.append([team_name, cfg_fallback, cfg_timeout,
+                              oper_fallback, oper_timeout])
+
+    def display(self):
+        header = ['Team Dev', 'Fallback', 'Timeout(s)', 'Oper Fallback', 'Oper Timeout(s)']
+        print(tabulate(natsorted(self.rows), header))
+
+
+# 'portchannel' group ("show interfaces portchannel ...")
+@click.group(cls=clicommon.AbbreviationGroup, invoke_without_command=True)
+@click.pass_context
 @multi_asic_util.multi_asic_click_options
 @click.option('--verbose', is_flag=True, help="Enable verbose output")
-def portchannel(namespace, display, verbose):
+def portchannel(ctx, namespace, display, verbose):
     """Show PortChannel information"""
-    team = Teamshow(namespace, display)
-    team.get_teams_info()
-    team.display_summary()
+    if ctx.invoked_subcommand is None:
+        team = Teamshow(namespace, display)
+        team.get_teams_info()
+        team.display_summary()
+
+
+@portchannel.command('fallback')
+@multi_asic_util.multi_asic_click_options
+@click.option('--verbose', is_flag=True, help="Enable verbose output")
+def portchannel_fallback(namespace, display, verbose):
+    """Show PortChannel LACP fallback configuration and operational state"""
+    team = TeamFallbackShow(namespace, display)
+    team.get_fallback_info()
+    team.display()

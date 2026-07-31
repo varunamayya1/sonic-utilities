@@ -156,6 +156,147 @@ class TestPortChannel(object):
         assert result.exit_code != 0
         assert 'Invalid value for \'--fast-rate\'' in result.output
 
+    @pytest.mark.parametrize("lacp_mode", ["active", "passive", "Active", "PASSIVE"])
+    def test_add_portchannel_with_lacp_mode_adhoc_validation(self, lacp_mode):
+        config.ADHOC_VALIDATION = True
+        runner = CliRunner()
+        db = Db()
+        obj = {'db': db.cfgdb}
+
+        result = runner.invoke(config.config.commands["portchannel"].commands["add"],
+                               ["PortChannel0006", "--lacp-mode", lacp_mode], obj=obj)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code == 0
+        expected_active = 'true' if lacp_mode.lower() == 'active' else 'false'
+        entry = db.cfgdb.get_entry('PORTCHANNEL', 'PortChannel0006')
+        assert entry.get('active') == expected_active
+
+    @pytest.mark.parametrize("lacp_mode", ["auto", "static"])
+    def test_add_portchannel_with_invalid_lacp_mode(self, lacp_mode):
+        runner = CliRunner()
+        db = Db()
+        obj = {'db': db.cfgdb}
+
+        result = runner.invoke(config.config.commands["portchannel"].commands["add"],
+                               ["PortChannel0006", "--lacp-mode", lacp_mode], obj=obj)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code != 0
+        assert 'Invalid value for \'--lacp-mode\'' in result.output
+
+    def test_get_portchannel_lacp_mode_default_active(self):
+        config.ADHOC_VALIDATION = True
+        runner = CliRunner()
+        db = Db()
+        obj = {'db': db.cfgdb}
+
+        result = runner.invoke(config.config.commands["portchannel"].commands["add"],
+                               ["PortChannel0007"], obj=obj)
+        assert result.exit_code == 0
+
+        result = runner.invoke(
+            config.config.commands["portchannel"].commands["lacp-mode"].commands["get"],
+            ["PortChannel0007"], obj=obj)
+        assert result.exit_code == 0
+        assert result.output.strip() == "active"
+
+    def test_set_portchannel_lacp_mode_passive(self):
+        config.ADHOC_VALIDATION = True
+        runner = CliRunner()
+        db = Db()
+        obj = {'db': db.cfgdb}
+
+        result = runner.invoke(config.config.commands["portchannel"].commands["add"],
+                               ["PortChannel0008"], obj=obj)
+        assert result.exit_code == 0
+
+        result = runner.invoke(
+            config.config.commands["portchannel"].commands["lacp-mode"].commands["set"],
+            ["PortChannel0008", "passive"], obj=obj)
+        assert result.exit_code == 0
+        entry = db.cfgdb.get_entry('PORTCHANNEL', 'PortChannel0008')
+        assert entry.get('active') == 'false'
+
+        result = runner.invoke(
+            config.config.commands["portchannel"].commands["lacp-mode"].commands["get"],
+            ["PortChannel0008"], obj=obj)
+        assert result.exit_code == 0
+        assert result.output.strip() == "passive"
+
+    def test_set_non_existing_portchannel_lacp_mode(self):
+        config.ADHOC_VALIDATION = True
+        runner = CliRunner()
+        db = Db()
+        obj = {'db': db.cfgdb}
+
+        result = runner.invoke(
+            config.config.commands["portchannel"].commands["lacp-mode"].commands["set"],
+            ["PortChannel0009", "passive"], obj=obj)
+        assert result.exit_code != 0
+        assert "Error: PortChannel0009 is not present." in result.output
+
+    def test_add_portchannel_with_fallback_timeout(self):
+        config.ADHOC_VALIDATION = True
+        runner = CliRunner()
+        db = Db()
+        obj = {'db': db.cfgdb}
+
+        result = runner.invoke(config.config.commands["portchannel"].commands["add"],
+                               ["PortChannel0005", "--fallback", "true",
+                                "--fallback-timeout", "120"], obj=obj)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code == 0
+
+        entry = db.cfgdb.get_entry('PORTCHANNEL', 'PortChannel0005')
+        assert entry['fallback'] == 'true'
+        assert entry['fallback_timeout'] == '120'
+
+    def test_add_portchannel_fallback_defaults_timeout(self):
+        config.ADHOC_VALIDATION = True
+        runner = CliRunner()
+        db = Db()
+        obj = {'db': db.cfgdb}
+
+        # fallback without an explicit timeout adopts the 90s default
+        result = runner.invoke(config.config.commands["portchannel"].commands["add"],
+                               ["PortChannel0005", "--fallback", "true"], obj=obj)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code == 0
+
+        entry = db.cfgdb.get_entry('PORTCHANNEL', 'PortChannel0005')
+        assert entry['fallback'] == 'true'
+        assert entry['fallback_timeout'] == '90'
+
+    def test_add_portchannel_fallback_timeout_without_fallback(self):
+        config.ADHOC_VALIDATION = True
+        runner = CliRunner()
+        db = Db()
+        obj = {'db': db.cfgdb}
+
+        result = runner.invoke(config.config.commands["portchannel"].commands["add"],
+                               ["PortChannel0005", "--fallback-timeout", "120"], obj=obj)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code != 0
+        assert "--fallback-timeout requires --fallback to be enabled" in result.output
+
+    @pytest.mark.parametrize("fallback_timeout", ["0", "65536", "abc"])
+    def test_add_portchannel_with_invalid_fallback_timeout(self, fallback_timeout):
+        runner = CliRunner()
+        db = Db()
+        obj = {'db': db.cfgdb}
+
+        result = runner.invoke(config.config.commands["portchannel"].commands["add"],
+                               ["PortChannel0005", "--fallback", "true",
+                                "--fallback-timeout", fallback_timeout], obj=obj)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code != 0
+        assert 'Invalid value for \'--fallback-timeout\'' in result.output
+
     def test_add_portchannel_member_with_invalid_name(self):
         runner = CliRunner()
         db = Db()

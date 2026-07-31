@@ -115,6 +115,7 @@ CFG_PORTCHANNEL_PREFIX = "PortChannel"
 CFG_PORTCHANNEL_PREFIX_LEN = 11
 CFG_PORTCHANNEL_MAX_VAL = 9999
 CFG_PORTCHANNEL_NO="<0-9999>"
+DEFAULT_PORTCHANNEL_FALLBACK_TIMEOUT = 90
 
 PORT_MTU = "mtu"
 PORT_SPEED = "speed"
@@ -533,6 +534,19 @@ def is_portchannel_present_in_db(db, portchannel_name):
     if portchannel_name in portchannel_list:
         return True
     return False
+
+LACP_MODE_ACTIVE = 'active'
+LACP_MODE_PASSIVE = 'passive'
+
+def lacp_mode_to_active_field(lacp_mode):
+    """Map CLI LACP mode to PORTCHANNEL.active CONFIG_DB value."""
+    return 'true' if lacp_mode.lower() == LACP_MODE_ACTIVE else 'false'
+
+def active_field_to_lacp_mode(active):
+    """Map PORTCHANNEL.active CONFIG_DB value to CLI LACP mode."""
+    if active is None or str(active).lower() == 'true':
+        return LACP_MODE_ACTIVE
+    return LACP_MODE_PASSIVE
 
 def is_port_member_of_this_portchannel(db, port_name, portchannel_name):
     """Check if a port is member of given portchannel
@@ -2947,24 +2961,36 @@ def portchannel(db, ctx, namespace):
 @click.argument('portchannel_name', metavar='<portchannel_name>', required=True)
 @click.option('--min-links', default=1, type=click.IntRange(1,1024))
 @click.option('--fallback', default='false')
+@click.option('--fallback-timeout', default=None, type=click.IntRange(1, 65535),
+              help="Seconds to wait for LACP PDUs before falling back to a single "
+                   "active member. Requires --fallback; defaults to 90.")
 @click.option('--fast-rate', default='false',
               type=click.Choice(['true', 'false'],
                                 case_sensitive=False))
+@click.option('--lacp-mode', default='active',
+              type=click.Choice(['active', 'passive'],
+                                case_sensitive=False))
 @click.pass_context
-def add_portchannel(ctx, portchannel_name, min_links, fallback, fast_rate):
+def add_portchannel(ctx, portchannel_name, min_links, fallback, fallback_timeout, fast_rate, lacp_mode):
     """Add port channel"""
+
+    if fallback_timeout is not None and fallback == 'false':
+        ctx.fail("--fallback-timeout requires --fallback to be enabled")
 
     fvs = {
         'admin_status': 'up',
         'mtu': '9100',
         'lacp_key': 'auto',
         'fast_rate': fast_rate.lower(),
+        'active': lacp_mode_to_active_field(lacp_mode),
     }
 
     if min_links != 0:
         fvs['min_links'] = str(min_links)
     if fallback != 'false':
         fvs['fallback'] = 'true'
+        fvs['fallback_timeout'] = str(fallback_timeout if fallback_timeout is not None
+                                      else DEFAULT_PORTCHANNEL_FALLBACK_TIMEOUT)
 
     db = ValidatedConfigDBConnector(ctx.obj['db'])
     if ADHOC_VALIDATION:
@@ -3016,6 +3042,53 @@ def remove_portchannel(ctx, portchannel_name):
     except JsonPatchConflict:
         ctx.fail("{} is not present.".format(portchannel_name))
 
+@portchannel.group(cls=clicommon.AbbreviationGroup, name='lacp-mode')
+@click.pass_context
+def portchannel_lacp_mode(ctx):
+    """Configure LACP activity mode for a port channel"""
+    pass
+
+@portchannel_lacp_mode.command('get')
+@click.argument('portchannel_name', metavar='<portchannel_name>', required=True)
+@click.pass_context
+def get_portchannel_lacp_mode(ctx, portchannel_name):
+    """Get the LACP activity mode for a port channel"""
+    db = ValidatedConfigDBConnector(ctx.obj['db'])
+
+    if ADHOC_VALIDATION:
+        if is_portchannel_name_valid(portchannel_name) is False:
+            ctx.fail("{} is invalid!, name should have prefix '{}' and suffix '{}'"
+                     .format(portchannel_name, CFG_PORTCHANNEL_PREFIX, CFG_PORTCHANNEL_NO))
+        if is_portchannel_present_in_db(db, portchannel_name) is False:
+            ctx.fail("{} is not present.".format(portchannel_name))
+
+    entry = db.get_entry('PORTCHANNEL', portchannel_name)
+    if entry is None:
+        ctx.fail("{} is not present.".format(portchannel_name))
+
+    click.echo(active_field_to_lacp_mode(entry.get('active')))
+
+@portchannel_lacp_mode.command('set')
+@click.argument('portchannel_name', metavar='<portchannel_name>', required=True)
+@click.argument('lacp_mode', metavar='<lacp_mode>', required=True,
+                type=click.Choice(['active', 'passive'], case_sensitive=False))
+@click.pass_context
+def set_portchannel_lacp_mode(ctx, portchannel_name, lacp_mode):
+    """Set the LACP activity mode for a port channel"""
+    db = ValidatedConfigDBConnector(ctx.obj['db'])
+
+    if ADHOC_VALIDATION:
+        if is_portchannel_name_valid(portchannel_name) is False:
+            ctx.fail("{} is invalid!, name should have prefix '{}' and suffix '{}'"
+                     .format(portchannel_name, CFG_PORTCHANNEL_PREFIX, CFG_PORTCHANNEL_NO))
+        if is_portchannel_present_in_db(db, portchannel_name) is False:
+            ctx.fail("{} is not present.".format(portchannel_name))
+
+    try:
+        db.mod_entry('PORTCHANNEL', portchannel_name,
+                     {'active': lacp_mode_to_active_field(lacp_mode)})
+    except JsonPatchConflict:
+        ctx.fail("{} is not present.".format(portchannel_name))
 
 @portchannel.group(cls=clicommon.AbbreviationGroup, name='member')
 @click.pass_context
