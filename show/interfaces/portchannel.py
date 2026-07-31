@@ -156,7 +156,6 @@ class Teamshow(object):
             output.append([team_id, 'PortChannel'+team_id, self.summary[team_id]['protocol'], self.summary[team_id]['ports']])
         print(tabulate(output, header))
 
-
 # 'portchannel' subcommand ("show interfaces portchannel")
 @click.group(invoke_without_command=True)
 @multi_asic_util.multi_asic_click_options
@@ -225,6 +224,8 @@ def show_lacp_info(team, ts):
         click.echo("Minimum number of links to bring PortChannel up is {}". format(info['runner.min_ports']))
         click.echo("address is {}". format(info['team_device.ifinfo.dev_addr']))
         click.echo("Fallback: {}". format("Disabled" if info['runner.fallback'] == "false" else "Enabled"))
+        if info['runner.fallback'] == "true":
+            click.echo("Fallback Timeout: {}". format(info['runner.fallback_timeout']))
         click.echo("Fast_rate: {}". format("Disabled" if info['runner.fast_rate'] == "false" else "Enabled"))
         click.echo("Retry_count_feature: {}". format(
                       "Disabled" if info['runner.enable_retry_count_feature'] == "false" else "Enabled"))
