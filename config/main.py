@@ -2864,6 +2864,25 @@ def hostname(new_hostname):
                ' preserve setting, run `config save`.')
 
 #
+# 'domainname' command
+#
+@config.command('domainname')
+@click.argument('new_domainname', metavar='<new_domainname>', required=True)
+def domainname(new_domainname):
+    """Change device domain name without impacting the traffic."""
+    config_db = ValidatedConfigDBConnector(ConfigDBConnector())
+    config_db.connect()
+    try:
+        config_db.mod_entry(swsscommon.CFG_DEVICE_METADATA_TABLE_NAME, 'localhost',
+                            {'domain_name': new_domainname})
+    except ValueError as e:
+        ctx = click.get_current_context()
+        ctx.fail("Failed to write new domain name to ConfigDB. Error: {}".format(e))
+
+    click.echo('Please note loaded setting will be lost after system reboot. To'
+               ' preserve setting, run `config save`.')
+
+#
 # 'synchronous_mode' command ('config synchronous_mode ...')
 #
 @config.command('synchronous_mode')

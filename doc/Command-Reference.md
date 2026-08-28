@@ -444,6 +444,7 @@ This command lists all the possible configuration commands at the top level.
     bgp                    BGP-related configuration tasks
     ecn                    ECN-related configuration tasks
     feature                Modify configuration of features
+    domainname             Change device domain name without impacting traffic
     hostname               Change device hostname without impacting traffic
     interface              Interface-related configuration tasks
     interface_naming_mode  Modify interface naming mode for interacting...
@@ -6512,6 +6513,21 @@ This command is used to change device hostname without traffic being impacted.
 - Example:
   ```
   admin@sonic:~$ sudo config hostname CSW06
+  Please note loaded setting will be lost after system reboot. To preserve setting, run `config save`.
+  ```
+
+**config domainname**
+
+This command is used to change device domain name without traffic being impacted.
+
+- Usage:
+  ```
+  config domainname <new_domainname>
+  ```
+
+- Example:
+  ```
+  admin@sonic:~$ sudo config domainname nokia.net
   Please note loaded setting will be lost after system reboot. To preserve setting, run `config save`.
   ```
 

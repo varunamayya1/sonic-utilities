@@ -3504,6 +3504,53 @@ class TestConfigHostname(object):
         print("TEARDOWN")
 
 
+class TestConfigDomainname(object):
+    @classmethod
+    def setup_class(cls):
+        print("SETUP")
+        import config.main
+        importlib.reload(config.main)
+
+    @mock.patch('config.main.ValidatedConfigDBConnector')
+    def test_domainname_add(self, db_conn_patch, get_cmd_module):
+        db_conn_patch().mod_entry = mock.Mock()
+        (config, show) = get_cmd_module
+
+        runner = CliRunner()
+        result = runner.invoke(config.config.commands["domainname"],
+                               ["nokia.net"])
+
+        # Verify success
+        assert result.exit_code == 0
+
+        # Check was called
+        args_list = db_conn_patch().mod_entry.call_args_list
+        assert len(args_list) > 0
+
+        args, _ = args_list[0]
+        assert len(args) > 0
+
+        # Check new domain name was part of args
+        assert {'domain_name': 'nokia.net'} in args
+
+    @patch("validated_config_db_connector.device_info.is_yang_config_validation_enabled", mock.Mock(return_value=True))
+    @patch("config.validated_config_db_connector.ValidatedConfigDBConnector.validated_mod_entry", mock.Mock(side_effect=ValueError))
+    def test_invalid_domainname_add_yang_validation(self):
+        config.ADHOC_VALIDATION = False
+        runner = CliRunner()
+        db = Db()
+        obj = {'db':db.cfgdb}
+
+        result = runner.invoke(config.config.commands["domainname"],
+                               ["invalid_domainname"], obj=obj)
+        assert result.exit_code != 0
+        assert "Failed to write new domain name" in result.output
+
+    @classmethod
+    def teardown_class(cls):
+        print("TEARDOWN")
+
+
 class TestConfigWarmRestart(object):
     @classmethod
     def setup_class(cls):
