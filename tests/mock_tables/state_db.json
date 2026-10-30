@@ -1201,6 +1201,7 @@
     },
     "LAG_TABLE|PortChannel0001": {
         "runner.fallback": "false",
+        "runner.fallback_timeout": "90",
         "team_device.ifinfo.dev_addr": "52:54:00:f2:e1:23",
         "team_device.ifinfo.ifindex": "71",
         "setup.pid": "32",
@@ -1216,6 +1217,7 @@
     },
     "LAG_TABLE|PortChannel0002": {
         "runner.fallback": "false",
+        "runner.fallback_timeout": "90",
         "team_device.ifinfo.dev_addr": "52:54:00:f2:e1:23",
         "team_device.ifinfo.ifindex": "72",
         "setup.pid": "40",
@@ -1231,6 +1233,7 @@
     },
     "LAG_TABLE|PortChannel0003": {
         "runner.fallback": "false",
+        "runner.fallback_timeout": "90",
         "team_device.ifinfo.dev_addr": "52:54:00:f2:e1:23",
         "team_device.ifinfo.ifindex": "73",
         "setup.pid": "48",
@@ -1246,6 +1249,7 @@
     },
     "LAG_TABLE|PortChannel0004": {
         "runner.fallback": "false",
+        "runner.fallback_timeout": "90",
         "team_device.ifinfo.dev_addr": "52:54:00:f2:e1:23",
         "team_device.ifinfo.ifindex": "74",
         "setup.pid": "56",

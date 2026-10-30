@@ -251,3 +251,68 @@ def info(namespace, display, pname):
     else:
         for team in ts.teams:
             show_lacp_info(team, ts)
+
+
+def show_runner_attrs(namespace, display, pname, columns):
+    """Show teamd runner values for each port channel, or for pname only.
+
+    columns is a list of (header, STATE_DB field, formatter) tuples.
+    """
+    ts = Teamshow(namespace, display)
+    ts.get_portchannel_names()
+    ts.get_teamdctl()
+    if pname:
+        if pname not in ts.teams:
+            raise click.ClickException("No such PortChannel interface: {}".format(pname))
+        teams = [pname]
+    else:
+        teams = natsorted(ts.teams)
+
+    output = []
+    for team in teams:
+        state = ts.teamsraw.get(ts.get_team_id(team), {})
+        row = [team]
+        for _, field, fmt in columns:
+            value = state.get(field)
+            row.append('N/A' if value is None else fmt(value))
+        output.append(row)
+    click.echo(tabulate(output, ['PortChannel'] + [header for header, _, _ in columns]))
+
+
+def bool_value(value):
+    return 'true' if value == 'true' else 'false'
+
+
+@portchannel.command('lacp-mode')
+@multi_asic_util.multi_asic_click_options
+@click.argument('pname', metavar='<PortChannel name>', required=False)
+def lacp_mode(namespace, display, pname):
+    """Show the LACP activity mode of port channels"""
+    show_runner_attrs(namespace, display, pname,
+                      [('LACP Mode', 'runner.active', lambda value: 'active' if value == 'true' else 'passive')])
+
+
+@portchannel.command('min-links')
+@multi_asic_util.multi_asic_click_options
+@click.argument('pname', metavar='<PortChannel name>', required=False)
+def min_links(namespace, display, pname):
+    """Show the minimum number of links of port channels"""
+    show_runner_attrs(namespace, display, pname, [('Min Links', 'runner.min_ports', str)])
+
+
+@portchannel.command('fallback')
+@multi_asic_util.multi_asic_click_options
+@click.argument('pname', metavar='<PortChannel name>', required=False)
+def fallback(namespace, display, pname):
+    """Show the LACP fallback setting and fallback timeout in seconds of port channels"""
+    show_runner_attrs(namespace, display, pname,
+                      [('Fallback', 'runner.fallback', bool_value),
+                       ('Fallback Timeout', 'runner.fallback_timeout', str)])
+
+
+@portchannel.command('fast-rate')
+@multi_asic_util.multi_asic_click_options
+@click.argument('pname', metavar='<PortChannel name>', required=False)
+def fast_rate(namespace, display, pname):
+    """Show the LACP fast rate setting of port channels"""
+    show_runner_attrs(namespace, display, pname, [('Fast Rate', 'runner.fast_rate', bool_value)])

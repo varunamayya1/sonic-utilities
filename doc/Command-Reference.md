@@ -11387,6 +11387,28 @@ This command displays all the port channels that are configured in the device an
       8  PortChannel8   LACP(A)(Up)  Ethernet8(S) Ethernet12(S)
   ```
 
+**show interfaces portchannel lacp-mode | min-links | fallback | fast-rate**
+
+These commands display the LACP setting that teamd is running with, for all port channels or for the given port channel. The fallback command also shows the fallback timeout in seconds. A port channel whose teamd is not running is shown as N/A.
+
+- Usage:
+  ```
+  show interfaces portchannel (lacp-mode | min-links | fallback | fast-rate) [<portchannel_name>]
+  ```
+
+- Example:
+  ```
+  admin@sonic:~$ show interfaces portchannel fallback
+  PortChannel    Fallback      Fallback Timeout
+  -------------  ----------  ------------------
+  PortChannel1   true                        70
+  PortChannel2   false                       90
+  admin@sonic:~$ show interfaces portchannel fallback PortChannel1
+  PortChannel    Fallback      Fallback Timeout
+  -------------  ----------  ------------------
+  PortChannel1   true                        70
+  ```
+
 
 ### PortChannel Config commands
 
@@ -11430,6 +11452,36 @@ This command adds or deletes a member port to/from the already created portchann
 - Example (Add interface Ethernet4 as member of the portchannel "PortChannel0011"):
   ```
   admin@sonic:~$ sudo config portchannel member add PortChannel0011 Ethernet4
+  ```
+
+**config portchannel lacp-mode | min-links | fallback | fallback-timeout | fast-rate**
+
+These commands change LACP settings of an existing portchannel. A change is written to CONFIG_DB and applied to the running teamd without recreating the portchannel, so member ports are not flapped. Use the matching `show interfaces portchannel` command to see the value teamd is running with; the fallback timeout is shown by `show interfaces portchannel fallback`.
+
+- lacp-mode - active/passive. In active mode the portchannel transmits LACPDUs; in passive mode it only responds to them. Default is active.
+- min-links - minimum number of links required to bring up the portchannel, 1 to 1024. Default is 1.
+- fallback - true/false. Enables or disables LACP fallback. Enabling fallback without --fallback-timeout keeps the configured timeout, or sets 90 seconds if none is configured. Disabling fallback keeps the configured timeout.
+- fallback-timeout - seconds, 1 to 65535, that a member must wait without receiving an LACPDU before it can become the fallback member. Default is 90. Fallback must be configured on the portchannel. If fallback is disabled, the value is stored and takes effect when fallback is enabled.
+- fast-rate - true/false. Requests LACPDUs every 1 second (true) or every 30 seconds (false). Default is false.
+
+- Usage:
+  ```
+  config portchannel lacp-mode <portchannel_name> (active | passive)
+  config portchannel min-links <portchannel_name> <1-1024>
+  config portchannel fallback [--fallback-timeout <1-65535>] <portchannel_name> (true | false)
+  config portchannel fallback-timeout <portchannel_name> <1-65535>
+  config portchannel fast-rate <portchannel_name> (true | false)
+  ```
+
+- Example (Enable fallback with a 60 second timeout on "PortChannel0011", then change the timeout):
+  ```
+  admin@sonic:~$ sudo config portchannel fallback --fallback-timeout 60 PortChannel0011 true
+  admin@sonic:~$ sudo config portchannel fallback-timeout PortChannel0011 120
+  ```
+
+- Example (Require two active links on "PortChannel0011"):
+  ```
+  admin@sonic:~$ sudo config portchannel min-links PortChannel0011 2
   ```
 
 Go Back To [Beginning of the document](#) or [Beginning of this section](#portchannels)
