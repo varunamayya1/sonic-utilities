@@ -4462,6 +4462,98 @@ class TestConfigInterface(object):
         assert result.exit_code == 0
         assert db.cfgdb.get_table('LOOPBACK_INTERFACE')['Loopback0']['admin_status'] == 'up'
 
+    def test_expand_single_intf_filter_is_range(self):
+        from utilities_common.intf_filter import expand_single_intf_filter
+        intfs, is_range = expand_single_intf_filter('Ethernet0-4')
+        assert intfs == ['Ethernet0', 'Ethernet1', 'Ethernet2', 'Ethernet3', 'Ethernet4']
+        assert is_range is True
+        intfs, is_range = expand_single_intf_filter('PortChannel1-4')
+        assert intfs == ['PortChannel1', 'PortChannel2', 'PortChannel3', 'PortChannel4']
+        assert is_range is True
+        intfs, is_range = expand_single_intf_filter('Ethernet-BP0-3')
+        assert intfs == ['Ethernet-BP0', 'Ethernet-BP1', 'Ethernet-BP2', 'Ethernet-BP3']
+        assert is_range is True
+        intfs, is_range = expand_single_intf_filter('Ethernet0')
+        assert intfs == ['Ethernet0']
+        assert is_range is False
+        intfs, is_range = expand_single_intf_filter('Ethernet-BP0')
+        assert intfs == ['Ethernet-BP0']
+        assert is_range is False
+        intfs, is_range = expand_single_intf_filter('Ethernet-Rec0')
+        assert intfs == []
+        assert is_range is False
+        intfs, is_range = expand_single_intf_filter('Ethernet-IB0')
+        assert intfs == []
+        assert is_range is False
+
+    def test_startup_shutdown_sparse_port_range(self):
+        db = Db()
+        runner = CliRunner()
+        obj = {'config_db': db.cfgdb, 'namespace': ''}
+
+        result = runner.invoke(config.config.commands['interface'].commands['shutdown'],
+                               ['Ethernet0-4'], obj=obj)
+        assert result.exit_code == 0
+
+        port_table = db.cfgdb.get_table('PORT')
+        assert port_table['Ethernet0']['admin_status'] == 'down'
+        assert port_table['Ethernet4']['admin_status'] == 'down'
+        assert 'Ethernet1' not in port_table
+
+        result = runner.invoke(config.config.commands['interface'].commands['startup'],
+                               ['Ethernet0-4'], obj=obj)
+        assert result.exit_code == 0
+
+        port_table = db.cfgdb.get_table('PORT')
+        assert port_table['Ethernet0']['admin_status'] == 'up'
+        assert port_table['Ethernet4']['admin_status'] == 'up'
+
+    def test_startup_shutdown_mixed_interface_filter(self):
+        db = Db()
+        runner = CliRunner()
+        obj = {'config_db': db.cfgdb, 'namespace': ''}
+        interface_filter = 'Ethernet8,Ethernet16-20,Ethernet32'
+        expected_interfaces = ['Ethernet8', 'Ethernet16', 'Ethernet20', 'Ethernet32']
+
+        result = runner.invoke(config.config.commands['interface'].commands['shutdown'],
+                               [interface_filter], obj=obj)
+        assert result.exit_code == 0
+
+        port_table = db.cfgdb.get_table('PORT')
+        for interface_name in expected_interfaces:
+            assert port_table[interface_name]['admin_status'] == 'down'
+        assert 'Ethernet17' not in port_table
+        assert 'Ethernet18' not in port_table
+        assert 'Ethernet19' not in port_table
+
+        result = runner.invoke(config.config.commands['interface'].commands['startup'],
+                               [interface_filter], obj=obj)
+        assert result.exit_code == 0
+
+        port_table = db.cfgdb.get_table('PORT')
+        for interface_name in expected_interfaces:
+            assert port_table[interface_name]['admin_status'] == 'up'
+
+    def test_single_asic_explicit_invalid_interface_fails(self):
+        db = Db()
+        runner = CliRunner()
+        obj = {'config_db': db.cfgdb, 'namespace': ''}
+
+        result = runner.invoke(config.config.commands['interface'].commands['shutdown'],
+                               ['Ethernet0,Ethernet999'], obj=obj)
+        assert result.exit_code != 0
+        assert "Ethernet999" in result.output
+
+    def test_sparse_port_range_with_no_valid_interfaces_fails(self):
+        db = Db()
+        runner = CliRunner()
+        obj = {'config_db': db.cfgdb, 'namespace': ''}
+
+        result = runner.invoke(config.config.commands['interface'].commands['shutdown'],
+                               ['Ethernet1-3'], obj=obj)
+        assert result.exit_code != 0
+        assert "Ethernet1, Ethernet2, Ethernet3" in result.output
+
     @pytest.mark.parametrize("interface_name", [
         "Ethernet320-Ethernet376",  # range bounds not numeric
         "Ethernet0-",               # missing end of range
@@ -4497,6 +4589,157 @@ class TestConfigInterface(object):
         assert "Invalid interface range" in result.output
 
     def teardown_method(self):
+        print("TEARDOWN")
+
+
+class TestConfigInterfaceMasic(object):
+    @classmethod
+    def setup_class(cls):
+        print("SETUP")
+        cls.original_topology = os.environ.get("UTILITIES_UNIT_TESTING_TOPOLOGY")
+        os.environ['UTILITIES_UNIT_TESTING'] = "2"
+        os.environ["UTILITIES_UNIT_TESTING_TOPOLOGY"] = "multi_asic"
+        import config.main
+        importlib.reload(config.main)
+        from .mock_tables import dbconnector
+        from .mock_tables import mock_multi_asic
+        importlib.reload(mock_multi_asic)
+        dbconnector.load_namespace_config()
+
+    def test_startup_shutdown_single_port(self, get_cmd_module, setup_multi_broadcom_masic):
+        (config, _) = get_cmd_module
+        config_db = config.ConfigDBConnector(use_unix_socket_path=True, namespace='asic0')
+        config_db.connect()
+        runner = CliRunner()
+        obj = {'config_db': config_db, 'namespace': 'asic0'}
+
+        result = runner.invoke(config.config.commands['interface'].commands['shutdown'],
+                               ['Ethernet0'], obj=obj)
+        assert result.exit_code == 0
+
+        port_table = config_db.get_table('PORT')
+        assert port_table['Ethernet0']['admin_status'] == 'down'
+
+        result = runner.invoke(config.config.commands['interface'].commands['startup'],
+                               ['Ethernet0'], obj=obj)
+        assert result.exit_code == 0
+
+        port_table = config_db.get_table('PORT')
+        assert port_table['Ethernet0']['admin_status'] == 'up'
+
+    def test_startup_shutdown_comma_separated_ports(self, get_cmd_module, setup_multi_broadcom_masic):
+        (config, _) = get_cmd_module
+        config_db = config.ConfigDBConnector(use_unix_socket_path=True, namespace='asic0')
+        config_db.connect()
+        runner = CliRunner()
+        obj = {'config_db': config_db, 'namespace': 'asic0'}
+
+        result = runner.invoke(config.config.commands['interface'].commands['shutdown'],
+                               ['Ethernet0,Ethernet4'], obj=obj)
+        assert result.exit_code == 0
+
+        port_table = config_db.get_table('PORT')
+        assert port_table['Ethernet0']['admin_status'] == 'down'
+        assert port_table['Ethernet4']['admin_status'] == 'down'
+
+        result = runner.invoke(config.config.commands['interface'].commands['startup'],
+                               ['Ethernet0,Ethernet4'], obj=obj)
+        assert result.exit_code == 0
+
+        port_table = config_db.get_table('PORT')
+        assert port_table['Ethernet0']['admin_status'] == 'up'
+        assert port_table['Ethernet4']['admin_status'] == 'up'
+
+    def test_startup_shutdown_sparse_port_range(self, get_cmd_module, setup_multi_broadcom_masic):
+        (config, _) = get_cmd_module
+        config_db = config.ConfigDBConnector(use_unix_socket_path=True, namespace='asic0')
+        config_db.connect()
+        runner = CliRunner()
+        obj = {'config_db': config_db, 'namespace': 'asic0'}
+
+        result = runner.invoke(config.config.commands['interface'].commands['shutdown'],
+                               ['Ethernet0-4'], obj=obj)
+        assert result.exit_code == 0
+
+        port_table = config_db.get_table('PORT')
+        assert port_table['Ethernet0']['admin_status'] == 'down'
+        assert port_table['Ethernet4']['admin_status'] == 'down'
+        assert 'Ethernet1' not in port_table
+
+        result = runner.invoke(config.config.commands['interface'].commands['startup'],
+                               ['Ethernet0-4'], obj=obj)
+        assert result.exit_code == 0
+
+        port_table = config_db.get_table('PORT')
+        assert port_table['Ethernet0']['admin_status'] == 'up'
+        assert port_table['Ethernet4']['admin_status'] == 'up'
+
+    @pytest.mark.parametrize("command_name,initial_status", [
+        ("shutdown", "up"),
+        ("startup", "down"),
+    ])
+    def test_startup_shutdown_mixed_filter_with_interface_in_other_namespace_fails(
+            self, get_cmd_module, setup_multi_broadcom_masic, command_name, initial_status
+    ):
+        (config, _) = get_cmd_module
+        config_db = config.ConfigDBConnector(use_unix_socket_path=True, namespace='asic0')
+        config_db.connect()
+        runner = CliRunner()
+        obj = {'config_db': config_db, 'namespace': 'asic0'}
+
+        # The explicit Ethernet0/Ethernet4 members and the generated
+        # Ethernet16/Ethernet20 members belong to asic0. Ethernet64 is also
+        # generated by the range filter but belongs to asic1
+        local_interfaces = ['Ethernet0', 'Ethernet4', 'Ethernet16', 'Ethernet20']
+        for interface_name in local_interfaces:
+            config_db.mod_entry('PORT', interface_name, {'admin_status': initial_status})
+        try:
+            result = runner.invoke(config.config.commands['interface'].commands[command_name],
+                                   ['Ethernet0,Ethernet16-64,Ethernet4'], obj=obj)
+            assert result.exit_code != 0
+            assert ("Interface(s) not in provided namespace 'asic0'. "
+                    "Interface(s) Ethernet64 exist(s) on namespace 'asic1'") in result.output
+
+            port_table = config_db.get_table('PORT')
+            for interface_name in local_interfaces:
+                assert port_table[interface_name]['admin_status'] == initial_status
+        finally:
+            for interface_name in local_interfaces:
+                config_db.mod_entry('PORT', interface_name, {'admin_status': 'up'})
+
+    @pytest.mark.parametrize("command_name,initial_status", [
+        ("shutdown", "up"),
+        ("startup", "down"),
+    ])
+    def test_startup_shutdown_explicit_invalid_interface_fails(
+            self, get_cmd_module, setup_multi_broadcom_masic, command_name, initial_status
+    ):
+        (config, _) = get_cmd_module
+        config_db = config.ConfigDBConnector(use_unix_socket_path=True, namespace='asic0')
+        config_db.connect()
+        runner = CliRunner()
+        obj = {'config_db': config_db, 'namespace': 'asic0'}
+
+        config_db.mod_entry('PORT', 'Ethernet0', {'admin_status': initial_status})
+        try:
+            result = runner.invoke(config.config.commands['interface'].commands[command_name],
+                                   ['Ethernet0,Ethernet272'], obj=obj)
+            assert result.exit_code != 0
+            assert ("Provided interface(s) : 'Ethernet272' are invalid "
+                    "in namespace 'asic0'") in result.output
+
+            port_table = config_db.get_table('PORT')
+            assert port_table['Ethernet0']['admin_status'] == initial_status
+        finally:
+            config_db.mod_entry('PORT', 'Ethernet0', {'admin_status': 'up'})
+
+    @classmethod
+    def teardown_class(cls):
+        os.environ['UTILITIES_UNIT_TESTING'] = "0"
+        if cls.original_topology is None:
+            os.environ.pop("UTILITIES_UNIT_TESTING_TOPOLOGY", None)
+        else:
+            os.environ["UTILITIES_UNIT_TESTING_TOPOLOGY"] = cls.original_topology
         print("TEARDOWN")
 
 
@@ -5680,3 +5923,71 @@ class TestGetMonitServicesByPrefix(object):
     def test_monit_not_running(self, mock_check_output):
         result = config._get_monit_services_by_prefix('container_memory_')
         assert result == []
+
+
+class TestRestartServicesMonitOrdering(object):
+    """Regression test for sonic-net/sonic-utilities#4774.
+
+    `monit monitor <service>` is asynchronous. If `monit reload` runs before
+    the monitor action for a container_memory_* service has completed, that
+    service can be left "Not monitored" permanently. This test verifies that
+    every container_memory_* service discovered by
+    _get_monit_services_by_prefix() is both monitored and waited on (via
+    _wait_for_monit_service_monitored()) strictly before `monit reload`.
+    """
+
+    @mock.patch('config.main.reset_mgmt_interface_if_usb_not_running')
+    @mock.patch('config.main.get_device_name', return_value=None)
+    @mock.patch('config.main._monit_service_exists', return_value=False)
+    @mock.patch('config.main.subprocess.check_call')
+    @mock.patch('config.main.wait_service_restart_finish')
+    @mock.patch('config.main.get_service_finish_timestamp', return_value="0")
+    @mock.patch('config.main._get_monit_services_by_prefix',
+                return_value=['container_memory_snmp', 'container_memory_gnmi'])
+    @mock.patch('config.main._wait_for_monit_service_monitored')
+    @mock.patch('config.main.clicommon.run_command')
+    def test_memory_services_monitored_and_waited_before_reload(
+        self, run_cmd, wait_mock, get_svcs, _gst, _wsrf, _check_call,
+        _monit_exists, _get_dev, _reset_usb,
+    ):
+        # Shared event recorder so ordering across the two independent mocks
+        # (clicommon.run_command and _wait_for_monit_service_monitored) can
+        # actually be compared on a single timeline.
+        events = []
+
+        def run_command_side_effect(cmd, *args, **kwargs):
+            if cmd[:3] == ['sudo', 'monit', 'monitor']:
+                events.append(('monitor', cmd[3]))
+            elif cmd == ['sudo', 'monit', 'reload']:
+                events.append(('reload', None))
+            return ("", 0)
+
+        def wait_side_effect(service, timeout=10):
+            events.append(('wait', service))
+
+        run_cmd.side_effect = run_command_side_effect
+        wait_mock.side_effect = wait_side_effect
+
+        config._restart_services()
+
+        memory_services = {'container_memory_snmp', 'container_memory_gnmi'}
+        monitored = [svc for kind, svc in events if kind == 'monitor']
+        waited = [svc for kind, svc in events if kind == 'wait']
+
+        # sudo monit monitor container_checker / container_memory_snmp / container_memory_gnmi
+        assert 'container_checker' in monitored
+        assert memory_services <= set(monitored)
+
+        # _wait_for_monit_service_monitored() called for container_checker and
+        # both container_memory_* services.
+        assert 'container_checker' in waited
+        assert memory_services <= set(waited)
+
+        # All memory-service waits must occur strictly before monit reload.
+        reload_idx = next(i for i, e in enumerate(events) if e[0] == 'reload')
+        memory_wait_idxs = [
+            i for i, (kind, svc) in enumerate(events)
+            if kind == 'wait' and svc in memory_services
+        ]
+        assert memory_wait_idxs, "no wait recorded for container_memory_* services"
+        assert all(i < reload_idx for i in memory_wait_idxs)
